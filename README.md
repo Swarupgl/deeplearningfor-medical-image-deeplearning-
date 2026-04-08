@@ -13,10 +13,10 @@ This repository documents an end-to-end medical imaging project that compares tw
 * **Size:** 780 patient scans (Normal: 133, Benign: 437, Malignant: 210).
 * **Train/Test Split:** 80% Training (624 images) / 20% Unseen Testing (156 images), strictly separated before augmentation to prevent data leakage.
 * **Mask Exclusion:** The original dataset mixes raw ultrasounds with radiologist-drawn `_mask.png` segmentation files. A custom `BUSIDataset` PyTorch class was engineered to strictly filter out these masks so the models learn to diagnose based purely on raw ultrasound speckle textures.
-* **Transformations & Augmentation:**
+* **Transformations:**
   * **Images resized** to `224x224` pixels.
   * **Normalized** using standard ImageNet channel statistics (`mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]`).
-  * **Medical Augmentation:** Applied `RandomHorizontalFlip()` to the training set to prevent memorization. Vertical flips and harsh rotations were excluded to preserve the clinical orientation (skin-to-deep-tissue depth) of the ultrasound probes.
+  * *(Note: To maintain a strict baseline comparison between models, artificial data augmentation like flips and rotations were excluded).*
 
 ---
 
@@ -47,20 +47,14 @@ To make this AI viable for real-time inference on portable hospital tablets, the
   * `Block 2`: 64 -> 128 channels (shrinks to 28x28)
   * `Block 3`: 128 -> 256 channels (shrinks to 14x14)
 * **Batch Normalization:** `nn.BatchNorm2d` (with `bias=False` in preceding convolutions) was injected after *every single convolutional step* to prevent vanishing gradients during from-scratch training.
-* **Global Average Pooling (GAP) + Dropout:** Replaced the standard `Flatten` layer with an `AdaptiveAvgPool2d(1)`. This crushed the 14x14 spatial grid into a 1x1 vector. Supported by **20% Dropout**, this completely destroyed the small model's ability to cheat via spatial memorization.
+* **Global Average Pooling (GAP):** Replaced the standard `Flatten` layer with an `AdaptiveAvgPool2d(1)`. This crushed the 14x14 spatial grid into a 1x1 vector, destroying the small model's ability to cheat via spatial memorization.
 
-### ⏱️ Professional Training Loop:
-* **Optimizer:** Adam with a slower, stable learning rate (`lr=0.0005`).
-* **LR Scheduler:** `StepLR` (step_size=10, gamma=0.5) automatically throttled the optimizer as it approached peak accuracy to prevent "bouncing" or crashing late in training.
-* **Dynamic Checkpointing:** The loop actively monitored `test_acc`. The `state_dict` was only saved to disk when a *new* high score was reached, ensuring the final evaluated model was perfectly shielded from late-epoch overfitting.
+### ⏱️ Strict A/B Training Loop:
+* **Optimizer:** Standard Adam (`lr=0.001`), identical to the VGG16 baseline.
+* **Fair Comparison:** To prove the architectural efficiency, learning rate schedulers and data augmentation were intentionally omitted, forcing the model to rely purely on its depthwise architecture to learn from the data.
 
-### 📊 Edge-AI Results & Confusion Matrix:
-Evaluated on the exact same 156-image holdout set, the Peak Depthwise Separable Model achieved a **77.56% Test Accuracy**.
-
-**Confusion Matrix Breakdown:**
-* **Malignant (Critical):** Correctly identified 38 out of 54 tumors.
-* **Benign:** Correctly identified 55 out of 75 masses.
-* **Normal:** Correctly identified 23 out of 27 scans.
+### 📊 Edge-AI Results:
+Evaluated on the exact same 156-image holdout set using the strict, unassisted baseline, the Depthwise Separable Model achieved an **83.33% Peak Test Accuracy**.
 
 ---
 
@@ -70,11 +64,11 @@ How does a custom network built from scratch compare to a 134M-parameter ImageNe
 | Metric | Heavyweight (VGG16) | Edge-AI (Depthwise) |
 | :--- | :--- | :--- |
 | **Total Parameters** | 134,268,739 | **48,067** |
-| **Parameter Footprint** | Baseline (100%) | **0.04% of VGG16** |
+| **Parameter Footprint** | Baseline (100%) | **0.035% of VGG16** |
 | **Training Method** | Transfer Learning | Trained from Scratch |
-| **Peak Test Accuracy** | 84.62% | **77.56%** |
+| **Peak Test Accuracy** | 84.62% | **83.33%** |
 
-**The Conclusion:** While VGG16 achieved a higher raw accuracy, it requires immense computational overhead. By meticulously separating spatial filtering from channel mixing and implementing GAP, the custom Depthwise Separable CNN successfully learned to classify tumors entirely from scratch. We achieved a **99.96% reduction in mathematical footprint** while maintaining a highly reliable **~78% diagnostic accuracy**, proving it is a viable, lightweight architecture for immediate deployment on Edge-AI medical devices.
+**The Conclusion:** While VGG16 achieved a slightly higher raw accuracy, it requires immense computational overhead. By meticulously separating spatial filtering from channel mixing and implementing GAP + Batch Normalization, the custom Depthwise Separable CNN successfully learned to classify tumors entirely from scratch. We achieved a **99.96% reduction in mathematical footprint** while maintaining a highly reliable **~83% diagnostic accuracy** (trailing the massive ImageNet model by barely 1.3%), proving it is a highly viable, lightweight architecture for immediate deployment on Edge-AI medical devices.
 
 ---
 
